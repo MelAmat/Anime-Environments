@@ -1,0 +1,105 @@
+#ENVIRONMENT - TOURNAMENT RULES
+#Max Players - 10 
+
+import numpy as np
+import random
+
+class TournamentOfPower:
+    def __init__(self, grid_size=20, max_agents=10):
+        self.grid_size = grid_size
+        self.max_agents = max_agents
+        self.agents = {}
+        self.reset()
+
+    def register_agent(self, name, agent_class):
+    #Adds a new player to the tournament
+        self.agents[name] = {
+            "instance": agent_class(name), #agent logic
+            "pos": np.random.randint(0, self.grid_size, size=2), #random starting position
+            "health": 100, #starts at 100
+            "energy": 100, #for special moves
+            "cooldown": 0,
+            "power_level": 1.0,
+            "world": world
+        }
+
+    def reset(self):
+    #Reset arena for all agents
+        for name in self.agents:
+            self.agents[name]["pos"] = np.random.randint(0, self.grid_size, size=2)
+            self.agents[name]["health"] = 100
+            self.agents[name]["energy"] = 100
+            self.agents[name]["cooldown"] = 0
+            self.agent[name]["power_level"] = 1.0
+        return self._get_state()
+
+    def _get_state(self):
+   #Return current state for all agents stats: dictionary
+        return {
+            name: {
+                "pos": data["pos"].copy(),
+                "health": data["health"],
+                "energy": data["energy"],
+                "cooldown": data["cooldown"],
+                "power_level": data["power_level"],
+                "world": data['world']
+            } for name, data in self.agents.items()
+        }
+
+    def step(self):
+      #One-time step in the game - give state and takes action from agent
+        actions = {name: agent["instance"].act(self._get_state()) for name, agent in self.agents.items()}
+        for name, action in actions.items():
+            self._apply_action(name, action)
+        rewards = {name: self._calculate_reward(name) for name in self.agents}
+        done = self._check_done()
+        return self._get_state(), rewards, done #returns new state, reward, and done
+
+    def _apply_action(self, name, action): #applies single players action
+        agent = self.agents[name]
+        if agent["health"] <= 0:
+            return  # Skip dead agents
+
+        # Movement
+        move = action.get("move", [0, 0])
+        new_pos = agent["pos"] + np.array(move)
+        new_pos = np.clip(new_pos, 0, self.grid_size - 1)
+        agent["pos"] = new_pos
+
+        # Attack - damage between 10-20
+        target_name = action.get("attack")
+        if target_name and target_name in self.agents:
+            target = self.agents[target_name]
+            same_world = agent["world"] == target["world"]
+            if not same_world and np.linalg.norm(agent["pos"] - target["pos"]) <= 2 and agent["cooldown"] == 0:
+                base_damage = random.randint(10, 20)
+                scaled_damage = int(base_damage * agent["power_level"])
+                target["health"] -= scaled_damage
+                agent["cooldown"] = 3 #makes it so you can't continously attack; you have to move in between attacks
+
+        # Power-up - increase energy
+        if action.get("power_up", False) and agent["energy"] >= 20:
+            agent["power_level"] = min(agent["power_level"] + 0.5, 3.0)
+            agent["energy"] -=20
+
+        # Cooldown reduction
+        if agent["cooldown"] > 0:
+            agent["cooldown"] -= 1
+
+        #Power level decay with each step
+        if agent["power_level"] > 1.0:
+          agent["power_level"] = max(1.0, agent["power_level"] - 0.05)
+
+    def _calculate_reward(self, name):
+        agent = self.agents[name]
+        if agent["health"] <= 0:
+            return -10 #penalty for being eliminated
+        reward = 0.1  # survival bonus
+        for other_name, other in self.agents.items():
+            if other_name != name and other["health"] <= 0:
+                reward += 10  # bonus for eliminating others from the tournament
+        return reward
+
+    def _check_done(self):
+        alive = [name for name, agent in self.agents.items() if agent["health"] > 0]
+        return len(alive) <= 1
